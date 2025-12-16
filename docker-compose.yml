@@ -1,0 +1,58 @@
+services:
+  # 환경 테스트용 MCP 서버
+  test-server:
+    build:
+      context: ./servers/test-server
+      dockerfile: Dockerfile
+    container_name: test-server
+    ports:
+      - "8000:8000"
+    environment:
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/sse')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+      
+  # 리소스 서버
+  resource-server:
+    build:
+      context: ./servers/resource-server
+      dockerfile: Dockerfile
+    container_name: resource-server
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    container_name: mcp-postgres
+    environment:
+      POSTGRES_USER: mcp
+      POSTGRES_PASSWORD: mcp1234
+      POSTGRES_DB: mes
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_mcp_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d  # 초기화 스크립트
+    restart: unless-stopped
+    
+  mes-server:
+    build:
+      context: ./servers/mes-server
+      dockerfile: Dockerfile
+    container_name: mes-server
+    ports:
+      - "8002:8000"
+    restart: unless-stopped
+
+volumes:
+  postgres_mcp_data:
+networks:
+  default:
+    name: mcp-network
