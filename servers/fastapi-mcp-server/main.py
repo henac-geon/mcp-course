@@ -7,6 +7,7 @@ REST API와 MCP 동시 제공
 """
 
 from fastapi import FastAPI, HTTPException
+from fastmcp import FastMCP
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date
@@ -19,10 +20,14 @@ import os
 # 설정
 # ============================================================
 
+mcp = FastMCP("MES-MCP")
+mcp_app = mcp.http_app()
+
 app = FastAPI(
     title="MES API + MCP",
     description="REST API와 MCP를 동시에 제공하는 통합 서버",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=mcp_app.lifespan
 )
 
 DB_URL = os.environ.get("DATABASE_URL", "postgresql://mcp:mcp1234@postgres:5432/mes")
@@ -180,6 +185,93 @@ def api_get_dashboard():
     """대시보드"""
     return get_dashboard_data()
 
+# ============================================================
+# MCP Tool 정의
+# ============================================================
+
+@mcp.tool
+def get_lines(status: str = None) -> str:
+    """
+    생산 라인 목록을 조회합니다.
+    
+    Args:
+        status: 상태 필터 (running, stopped, maintenance). 미지정 시 전체.
+    
+    Returns:
+        라인 목록
+    """
+    data = get_lines_data(status)
+    return json.dumps(data, default=str, ensure_ascii=False)
+
+
+@mcp.tool
+def get_products() -> str:
+    """
+    제품 목록을 조회합니다.
+    
+    Returns:
+        제품 목록 (product_id, product_name, unit_price)
+    """
+    data = get_products_data()
+    return json.dumps(data, default=str, ensure_ascii=False)
+
+
+@mcp.tool
+def get_daily_production(target_date: str = None, line_id: str = None) -> str:
+    """
+    일일 생산 실적을 조회합니다.
+    
+    Args:
+        target_date: 조회 날짜 (YYYY-MM-DD). 미지정 시 오늘.
+        line_id: 라인 ID 필터.
+    
+    Returns:
+        생산 실적 목록
+    """
+    data = get_production_data(target_date, line_id)
+    return json.dumps(data, default=str, ensure_ascii=False)
+
+
+@mcp.tool
+def get_dashboard() -> str:
+    """
+    종합 대시보드 데이터를 조회합니다.
+    
+    Returns:
+        라인 상태, 오늘 실적, 불량 Top 3
+    """
+    data = get_dashboard_data()
+    return json.dumps(data, default=str, ensure_ascii=False)
+
+
+@mcp.tool
+def add_production(line_id: str, product_id: str, 
+                   target_qty: int, produced_qty: int, defect_qty: int = 0) -> str:
+    """
+    생산 실적을 등록합니다.
+    
+    Args:
+        line_id: 라인 ID (예: LINE-01)
+        product_id: 제품 ID (예: PROD-A)
+        target_qty: 목표 수량
+        produced_qty: 생산 수량
+        defect_qty: 불량 수량
+    
+    Returns:
+        등록 결과
+    """
+    try:
+        add_production_data(line_id, product_id, target_qty, produced_qty, defect_qty)
+        return json.dumps({"success": True, "message": "생산 실적이 등록되었습니다"})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
+# ============================================================
+# MCP 마운트
+# ============================================================
+
+app.mount("/", mcp_app)
 
 if __name__ == "__main__":
     import uvicorn
