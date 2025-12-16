@@ -179,6 +179,86 @@ def get_dashboard() -> str:
                 }, default=str, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e)})
+    
+
+@mcp.prompt()
+def get_daily_report_html() -> str:
+    """
+    일일 공장현황 보고서를 HTML 형식으로 생성합니다.
+    
+    Returns:
+        HTML 보고서
+    """
+    try:
+        with psycopg2.connect(DB_URL) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # 라인 상태
+                cur.execute("SELECT * FROM production_lines")
+                lines = cur.fetchall()
+                
+                # 오늘 실적
+                cur.execute("""
+                    SELECT r.line_id, r.product_id, r.target_qty, r.produced_qty, r.defect_qty
+                    FROM production_records r
+                    WHERE r.production_date = CURRENT_DATE
+                """)
+                records = cur.fetchall()
+                
+                # 불량 현황
+                cur.execute("""
+                    SELECT defect_type, SUM(defect_count) as cnt
+                    FROM quality_inspections GROUP BY defect_type
+                """)
+                defects = cur.fetchall()
+                
+                # HTML 생성
+                html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>일일 공장현황 보고서</title>
+    <style>
+        body {{ font-family: 'Malgun Gothic', sans-serif; margin: 20px; }}
+        h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; }}
+        h2 {{ color: #34495e; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: center; }}
+        th {{ background-color: #3498db; color: white; }}
+        tr:nth-child(even) {{ background-color: #f9f9f9; }}
+        .running {{ color: green; font-weight: bold; }}
+        .maintenance {{ color: orange; font-weight: bold; }}
+        .stopped {{ color: red; font-weight: bold; }}
+    </style>
+</head>
+<body>
+    <h1>📊 일일 공장현황 보고서</h1>
+    <p>생성일시: {date.today().isoformat()}</p>
+    
+    <h2>1. 라인 가동 현황</h2>
+    <table>
+        <tr><th>라인 ID</th><th>라인명</th><th>상태</th></tr>
+        {"".join(f"<tr><td>{l['line_id']}</td><td>{l['line_name']}</td><td class='{l['status']}'>{l['status']}</td></tr>" for l in lines)}
+    </table>
+    
+    <h2>2. 오늘 생산 실적</h2>
+    <table>
+        <tr><th>라인</th><th>제품</th><th>목표</th><th>생산</th><th>불량</th><th>달성률</th></tr>
+        {"".join(f"<tr><td>{r['line_id']}</td><td>{r['product_id']}</td><td>{r['target_qty']}</td><td>{r['produced_qty']}</td><td>{r['defect_qty']}</td><td>{round(r['produced_qty']*100/r['target_qty'], 1)}%</td></tr>" for r in records) if records else "<tr><td colspan='6'>오늘 실적 없음</td></tr>"}
+    </table>
+    
+    <h2>3. 불량 유형별 현황</h2>
+    <table>
+        <tr><th>불량 유형</th><th>건수</th></tr>
+        {"".join(f"<tr><td>{d['defect_type']}</td><td>{d['cnt']}</td></tr>" for d in defects) if defects else "<tr><td colspan='2'>불량 데이터 없음</td></tr>"}
+    </table>
+</body>
+</html>"""
+                
+                return html
+                
+    except Exception as e:
+        return f"<html><body><h1>오류 발생</h1><p>{str(e)}</p></body></html>"
+
 
 if __name__ == "__main__":
     mcp.run(transport="sse", host="0.0.0.0", port=8000)

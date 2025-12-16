@@ -41,7 +41,7 @@ services:
       - postgres_mcp_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d  # 초기화 스크립트
     restart: unless-stopped
-    
+
   mes-server:
     build:
       context: ./servers/mes-server
@@ -51,8 +51,20 @@ services:
       - "8002:8000"
     restart: unless-stopped
 
+  fastapi-mcp:
+    build:
+      context: ./servers/fastapi-mcp-server
+      dockerfile: Dockerfile
+    container_name: fastapi-mcp
+    ports:
+      - "8003:8000"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
 volumes:
   postgres_mcp_data:
+
 networks:
   default:
     name: mcp-network
