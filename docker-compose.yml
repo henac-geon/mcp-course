@@ -7,9 +7,6 @@ services:
     container_name: test-server
     ports:
       - "8000:8000"
-    environment:
-      MCP_HOST: "0.0.0.0"
-      MCP_PORT: "8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/sse')"]
@@ -17,8 +14,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-      
-  # 리소스 서버
   resource-server:
     build:
       context: ./servers/resource-server
@@ -27,7 +22,6 @@ services:
     ports:
       - "8001:8000"
     restart: unless-stopped
-
   postgres:
     image: postgres:15
     container_name: mcp-postgres
@@ -41,7 +35,6 @@ services:
       - postgres_mcp_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d  # 초기화 스크립트
     restart: unless-stopped
-
   mes-server:
     build:
       context: ./servers/mes-server
@@ -50,7 +43,6 @@ services:
     ports:
       - "8002:8000"
     restart: unless-stopped
-
   fastapi-mcp:
     build:
       context: ./servers/fastapi-mcp-server
@@ -61,10 +53,27 @@ services:
     depends_on:
       - postgres
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  mcp-client:
+    build:
+      context: ./mcp-client
+      dockerfile: Dockerfile
+    environment:
+      - MCP_SERVER_URL=http://fastapi-mcp:8000/mcp
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      fastapi-mcp:
+        condition: service_healthy
+    stdin_open: true   # 대화형 클라이언트용
+    tty: true          # 대화형 클라이언트용
 
 volumes:
   postgres_mcp_data:
-
+  
 networks:
   default:
     name: mcp-network
